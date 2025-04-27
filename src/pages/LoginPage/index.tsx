@@ -39,7 +39,7 @@ const LoginPage = () => {
       } else {
         localStorage.setItem("accessToken", res?.data?.data?.token);
         dispatch({
-          type: "auth/logout",
+          type: "auth/updateAccessToken",
           payload: res?.data?.data?.token,
         });
         window.location.href = "/";
