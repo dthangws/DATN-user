@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import {
   Form,
   Typography,
@@ -12,6 +12,7 @@ import {
 import { useParams, Link } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { RootState } from "@/store";
+import * as DocxPreview from "docx-preview";
 
 import {
   GetDetailDocumentApiResponse,
@@ -31,6 +32,7 @@ const DetailPage = () => {
   const accessToken = useSelector((state: RootState) => state.auth.accessToken);
 
   const [activeTab, setActiveTab] = useState("images");
+  const docxContainerRef = useRef<HTMLDivElement>(null);
 
   const [getDetail, { data, isFetching }] = useLazyGetDetailDocumentQuery();
   const { data: relatedData, isFetching: isFetchingRelated } =
@@ -83,21 +85,70 @@ const DetailPage = () => {
     }
   }, [data]);
 
+  useEffect(() => {
+    if (
+      activeTab === "preview" &&
+      dataDetail?.data?.file_path &&
+      docxContainerRef.current
+    ) {
+      const fetchAndRenderDocx = async () => {
+        try {
+          const fileUrl = `${process.env.REACT_APP_SEVER_URL}/${dataDetail.data.file_path}`;
+
+          const response = await fetch(fileUrl);
+          if (!response.ok) {
+            throw new Error("Failed to fetch DOCX file");
+          }
+          const arrayBuffer = await response.arrayBuffer();
+
+          // Clear previous content
+          if (docxContainerRef.current) {
+            docxContainerRef.current.innerHTML = "";
+          }
+
+          // Render DOCX with docx-preview
+          await DocxPreview.renderAsync(
+            arrayBuffer,
+            docxContainerRef.current!,
+            undefined,
+            {
+              breakPages: true,
+            }
+          );
+
+          // Hide pages after the 4th page
+          if (docxContainerRef.current) {
+            const pages = docxContainerRef.current.querySelectorAll(
+              ".docx-wrapper > section"
+            );
+            pages.forEach((page, index) => {
+              if (index >= 4) {
+                (page as HTMLElement).style.display = "none";
+              }
+            });
+          }
+        } catch (error) {
+          console.error("Error rendering DOCX:", error);
+          message.error("Không thể hiển thị bản xem trước tài liệu!");
+        }
+      };
+
+      fetchAndRenderDocx();
+    }
+  }, [activeTab, dataDetail?.data?.file_path]);
+
   const handleAddToCart = () => {
     if (!dataDetail?.data) {
       message.error("Không thể thêm vào giỏ hàng!");
       return;
     }
     const cartKey = "cart";
-    // Get current cart from localStorage
     const cart = JSON.parse(localStorage.getItem(cartKey) || "[]");
-    // Check if document already exists in cart
     const exists = cart.some((item: any) => item.id === dataDetail.data.id);
     if (exists) {
       message.info("Tài liệu đã có trong giỏ hàng!");
       return;
     }
-    // Add document to cart and save
     cart.push(dataDetail.data);
     localStorage.setItem(cartKey, JSON.stringify(cart));
     message.success("Đã thêm vào giỏ hàng!");
@@ -107,7 +158,6 @@ const DetailPage = () => {
     <Spin spinning={isFetching || isFetchingRelated}>
       <div className="p-6 bg-gray-100 min-h-screen">
         <div className="flex gap-x-6">
-          {/* Bên trái: Hình ảnh demo, lượt xem, lượt tải */}
           <div className="w-1/5">
             <div className="bg-[#fff] p-5 h-fit mb-4 flex items-start justify-center">
               <Image
@@ -132,7 +182,6 @@ const DetailPage = () => {
             </div>
           </div>
 
-          {/* Bên phải: Thông tin tài liệu và nội dung */}
           <div className="flex-1 bg-[#fff] p-5 h-full">
             <Typography.Title level={3}>
               Tên tài liệu: {dataDetail?.data?.title || "ABC"}
@@ -179,7 +228,6 @@ const DetailPage = () => {
               </div>
             )}
 
-            {/* Tabs: Mở tài liệu và Hình ảnh */}
             <div className="mt-4">
               <Tabs activeKey={activeTab} onChange={setActiveTab}>
                 {isViewDocumentFile && (
@@ -224,6 +272,24 @@ const DetailPage = () => {
                     <Typography.Text>Không có hình ảnh</Typography.Text>
                   )}
                 </TabPane>
+                <TabPane tab="Xem trước" key="preview">
+                  {dataDetail?.data?.file_path &&
+                  /\.docx$/i.test(dataDetail?.data?.file_path) ? (
+                    <div
+                      ref={docxContainerRef}
+                      style={{
+                        width: "100%",
+                        height: "1000px",
+                        overflow: "auto",
+                        border: "1px solid #e8e8e8",
+                      }}
+                    />
+                  ) : (
+                    <Typography.Text>
+                      Tài liệu không hỗ trợ xem trước (yêu cầu file .docx)
+                    </Typography.Text>
+                  )}
+                </TabPane>
               </Tabs>
             </div>
           </div>
@@ -238,6 +304,12 @@ const DetailPage = () => {
           </div>
         </div>
       </div>
+
+      <style>{`
+        .docx-wrapper > section:nth-child(n + 5) {
+          display: none;
+        }
+      `}</style>
     </Spin>
   );
 };
